@@ -66,24 +66,18 @@ import javax.xml.transform.Result;
 
 
 public class MainActivity extends AppCompatActivity {
-     static final int EPOCHS = 10;
+
+     static final int EPOCHS = 100;
      private AssetManager assetManager;
-    final float IMAGE_MEAN = 127.5f;
-    final float IMAGE_STD = 127.5f;
-    private boolean tfLiteBusy = false;
+     private boolean tfLiteBusy = false;
      int inputSize;
      Vector<String> labels;
-    float[][] labelProb;
-    private static final String MODEL_PATH = "mobilenet_v1_1.0_224.tflite";
-    private static final String LABEL_PATH = "mobilenet_v1_1.0_224.txt";
+     float[][] labelProb;
+     private static final String MODEL_PATH = "mobilenet_v1_1.0_224.tflite";
+     private static final String LABEL_PATH = "mobilenet_v1_1.0_224.txt";
+     long startTime;
 
-    List<Map<String, Object>> results;
-     Bitmap bitmap;
-
-     ByteBuffer inputByteBuffer;
-     TensorBuffer outputByteBuffer;
-
-     Interpreter.Options tfliteOptions = new Interpreter.Options();;
+     List<Map<String, Object>> results;
      Interpreter tflite;
      static final int BYTES_PER_CHANNEL = 4;
 
@@ -96,18 +90,19 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
 
-        // setupInterpreter();
-
-        // load image + inference
         try {
-            loadModel();
-            new RunModelOnImage().executeTfliteTask();
+            if (loadModel() == "success")
+                startTime = SystemClock.uptimeMillis();
+            for (int i = 0; i < EPOCHS; i++)
+                    new RunModelOnImage().executeTfliteTask();
+            Log.v("time", "Total Inference took " + (SystemClock.uptimeMillis() - startTime));
+
         } catch(Exception e) {
             e.printStackTrace();
         }
-        //loadImageAsByteBuffer();
-
-        //runInferenceOnImage(EPOCHS);
+        close();
+        MainActivity.this.finish();
+        System.exit(0);
 
     }
 
@@ -207,7 +202,6 @@ public class MainActivity extends AppCompatActivity {
                 runTflite();
                 tfLiteBusy = false;
                 onRunTfliteDone();
-
         }
 
         protected Void doInBackground(Void... backgroundArguments) {
@@ -219,6 +213,7 @@ public class MainActivity extends AppCompatActivity {
             tfLiteBusy = false;
             onRunTfliteDone();
         }
+
     }
 
     private class RunModelOnImage extends TfliteTask {
@@ -248,35 +243,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loadImageAsByteBuffer() {
-        try {
-            bitmap = BitmapFactory.decodeStream(this.getAssets().open("skata.jpg"));
-        } catch (IOException e) {
-            e.printStackTrace();
-            Log.e("bitmapError",  "failed big time boi", e);
-        }
 
-        Tensor tensor = tflite.getInputTensor(0);
-        int[] shape = tensor.shape();
-        int inputSize = shape[1];
-        int inputChannels = shape[3];
-        int bytePerChannel = 4;
-
-        Bitmap resizedBitmap = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true);
-        inputByteBuffer = ByteBuffer.allocateDirect(1 * inputSize * inputSize * inputChannels * bytePerChannel);
-        inputByteBuffer.order(ByteOrder.nativeOrder());
-
-        // Subtract and divide with mean and std for float point models. Values can be found on tensorflows model hub.
-        for (int i = 0; i < inputSize; ++i) {
-            for (int j = 0; j < inputSize; ++j) {
-                int pixelValue = resizedBitmap.getPixel(j, i);
-                inputByteBuffer.putFloat((((pixelValue >> 16) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
-                inputByteBuffer.putFloat((((pixelValue >> 8) & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
-                inputByteBuffer.putFloat(((pixelValue & 0xFF) - IMAGE_MEAN) / IMAGE_STD);
-            }
-        }
-
-    }
 
     private List<Map<String, Object>> GetTopN(int numResults, float threshold) {
         PriorityQueue<Map<String, Object>> pq =
@@ -307,25 +274,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return recognitions;
-    }
-
-    private void setupInterpreter() {
-        tfliteOptions.setNumThreads(2);
-        try {
-            tflite = new Interpreter(loadModelFile(), tfliteOptions);
-        } catch (IOException e) {
-            Log.e("tfliteError","error loding model", e);
-        }
-    }
-
-    private MappedByteBuffer loadModelFile( ) throws IOException {
-
-        AssetFileDescriptor fileDescriptor = this.getAssets().openFd(MODEL_PATH);
-        FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
-        FileChannel fileChannel = inputStream.getChannel();
-        long startOffset = fileDescriptor.getStartOffset();
-        long declaredLength = fileDescriptor.getDeclaredLength();
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
     }
 
     private String loadModel() throws IOException {
@@ -368,33 +316,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void runInferenceOnImage(int epochs) {
-
-        Trace.beginSection("runInference");
-        long startTimeForReference = SystemClock.uptimeMillis();
-        for (int i = 0; i < epochs; i++){
-            tflite.run(inputByteBuffer, outputByteBuffer.getBuffer().rewind());
-        }
-        long endTimeForReference = SystemClock.uptimeMillis();
-        Trace.endSection();
-        System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
-    }
-
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.menu_main, menu);
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
 
-        //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
             return true;
         }

@@ -5,12 +5,9 @@ import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.RectF;
 import android.media.Image;
 import android.os.Bundle;
-import android.graphics.Matrix;
-import android.os.AsyncTask;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
@@ -20,7 +17,6 @@ import androidx.appcompat.widget.Toolbar;
 
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.Interpreter;
-import org.tensorflow.lite.Tensor;
 import org.tensorflow.lite.support.common.FileUtil;
 import org.tensorflow.lite.support.common.TensorOperator;
 import org.tensorflow.lite.support.common.TensorProcessor;
@@ -41,14 +37,10 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.ImageView;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -59,269 +51,277 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
-import java.util.Vector;
 import java.util.stream.Collectors;
-
-import javax.xml.transform.Result;
 
 
 public class MainActivity extends AppCompatActivity {
+    private static final int EPOCHS = 100;
 
-     static final int EPOCHS = 100;
-     private AssetManager assetManager;
-     private boolean tfLiteBusy = false;
-     int inputSize;
-     Vector<String> labels;
-     float[][] labelProb;
-     private static final String MODEL_PATH = "mobilenet_v1_1.0_224.tflite";
-     private static final String LABEL_PATH = "mobilenet_v1_1.0_224.txt";
-     long startTime;
+    static final int IMG_SIZE_X = 224;
+    static final int IMG_SIZE_Y = 224;
 
-     List<Map<String, Object>> results;
-     Interpreter tflite;
-     static final int BYTES_PER_CHANNEL = 4;
+    private static final String MODEL_PATH = "mobilenet_v1_1.0_224.tflite";
+    private static final String LABELS_PATH = "mobilenet_v1_1.0_224.txt";
 
+    private TensorBuffer outputProbabilityBuffer;
+    private List<String> associatedAxisLabels = null;
+    private TensorProcessor probabilityProcessor;
+    Map<String, Float> floatMap;
+
+    private  int imageSizeX;
+    private  int imageSizeY;
+    private Bitmap bitmap;
+
+    private List<Recognition> recognitions;
+
+    private TensorImage inputImageBuffer;
+
+    private Interpreter.Options tfliteOptions = new Interpreter.Options();;
+    private Interpreter tflite;
+
+    private List<String> labels;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
 
-        try {
-            if (loadModel() == "success") {
-                startTime = SystemClock.uptimeMillis();
-                for (int i = 0; i < EPOCHS; i++)
-                    new RunModelOnImage().executeTfliteTask();
-                Log.v("time", "Inference took " + (SystemClock.uptimeMillis() - startTime));
-            }
-        } catch(Exception e) {
-            e.printStackTrace();
-        }
-        close();
-        MainActivity.this.finish();
+        setupInterpreter();
+        loadBitmap();
+        loadLabels();
+
+        //recognitions = recognizeImage();
+
+        runInferenceOnImage(EPOCHS);
+
+
+        setupLabels();
+        this.finish();
         System.exit(0);
 
     }
 
-     ByteBuffer feedInputTensorImage(String path, float mean, float std) throws IOException{
+    private void loadBitmap(){
+        try {
+            bitmap = BitmapFactory.decodeStream(this.getAssets().open("skata.jpg"));
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.e("bitmapError",  "failed big time boi", e);
+        }
 
-        InputStream inputStream = this.getAssets().open(path);
-        Bitmap  bitmapRaw = BitmapFactory.decodeStream(inputStream);
-        return feedInputTensor(bitmapRaw, mean, std);
+        inputImageBuffer = new TensorImage(tflite.getInputTensor(0).dataType()); // or Data.Type.FLOAT32
+        inputImageBuffer.load(bitmap);
+
+        int cropSize = Math.min(bitmap.getWidth(), bitmap.getHeight());
+
+        ImageProcessor imageProcessor = new ImageProcessor.Builder()
+                .add(new ResizeWithCropOrPadOp(cropSize,cropSize))
+                .add(new ResizeOp(224, 224, ResizeOp.ResizeMethod.BILINEAR))
+                .add(getProcessNormalizeOp())
+                .build();
+        inputImageBuffer = imageProcessor.process(inputImageBuffer);
 
     }
-
-     ByteBuffer feedInputTensor(Bitmap bitmapRaw, float mean, float std) throws IOException {
-        Tensor tensor = tflite.getInputTensor(0);
-        int[] shape = tensor.shape();
-        inputSize = shape[1];
-        int inputChannels = shape[3];
-
-        int bytePerChannel = tensor.dataType() == DataType.UINT8 ? 1 : BYTES_PER_CHANNEL;
-        ByteBuffer imgData = ByteBuffer.allocateDirect(1 * inputSize * inputSize * inputChannels * bytePerChannel);
-        imgData.order(ByteOrder.nativeOrder());
-
-        Bitmap bitmap = bitmapRaw;
-        if (bitmapRaw.getWidth() != inputSize || bitmapRaw.getHeight() != inputSize) {
-            Matrix matrix = getTransformationMatrix(bitmapRaw.getWidth(), bitmapRaw.getHeight(),
-                    inputSize, inputSize, false);
-            bitmap = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888);
-            final Canvas canvas = new Canvas(bitmap);
-            canvas.drawBitmap(bitmapRaw, matrix, null);
+    private void loadLabels() {
+        try {
+            associatedAxisLabels = FileUtil.loadLabels(this, LABELS_PATH);
+            labels = FileUtil.loadLabels(this, LABELS_PATH);
+        } catch (IOException e) {
+            Log.e("tfliteError", "error reading labels", e);
         }
+        outputProbabilityBuffer = TensorBuffer.createFixedSize(new int[]{1, 1001}, DataType.FLOAT32);
 
-        if (tensor.dataType() == DataType.FLOAT32) {
-            for (int i = 0; i < inputSize; ++i) {
-                for (int j = 0; j < inputSize; ++j) {
-                    int pixelValue = bitmap.getPixel(j, i);
-                    imgData.putFloat((((pixelValue >> 16) & 0xFF) - mean) / std);
-                    imgData.putFloat((((pixelValue >> 8) & 0xFF) - mean) / std);
-                    imgData.putFloat(((pixelValue & 0xFF) - mean) / std);
-                }
-            }
-        } else {
-            for (int i = 0; i < inputSize; ++i) {
-                for (int j = 0; j < inputSize; ++j) {
-                    int pixelValue = bitmap.getPixel(j, i);
-                    imgData.put((byte) ((pixelValue >> 16) & 0xFF));
-                    imgData.put((byte) ((pixelValue >> 8) & 0xFF));
-                    imgData.put((byte) (pixelValue & 0xFF));
-                }
-            }
-        }
-
-        return imgData;
+        probabilityProcessor = new TensorProcessor.Builder().add(getPostprocessNormalizeOp()).build();
     }
 
-    private static Matrix getTransformationMatrix(final int srcWidth,
-                                                  final int srcHeight,
-                                                  final int dstWidth,
-                                                  final int dstHeight,
-                                                  final boolean maintainAspectRatio) {
-        final Matrix matrix = new Matrix();
+    private void setupLabels() {
 
-        if (srcWidth != dstWidth || srcHeight != dstHeight) {
-            final float scaleFactorX = dstWidth / (float) srcWidth;
-            final float scaleFactorY = dstHeight / (float) srcHeight;
 
-            if (maintainAspectRatio) {
-                final float scaleFactor = Math.max(scaleFactorX, scaleFactorY);
-                matrix.postScale(scaleFactor, scaleFactor);
-            } else {
-                matrix.postScale(scaleFactorX, scaleFactorY);
-            }
-        }
+        if (associatedAxisLabels != null) {
+            TensorLabel labels = new TensorLabel(associatedAxisLabels, probabilityProcessor.process(outputProbabilityBuffer));
 
-        matrix.invert(new Matrix());
-        return matrix;
-    }
-
-    private void close() {
-        if (tflite != null)
-            tflite.close();
-        labels = null;
-        labelProb = null;
-    }
-
-    private abstract class TfliteTask extends AsyncTask<Void, Void, Void> {
-
-        TfliteTask() {
-            if (tfLiteBusy) throw new RuntimeException("Interpreter busy");
-            else tfLiteBusy = true;
-
-        }
-
-        abstract void runTflite();
-
-        abstract void onRunTfliteDone();
-
-        public void executeTfliteTask() {
-                runTflite();
-                tfLiteBusy = false;
-                onRunTfliteDone();
-        }
-
-        protected Void doInBackground(Void... backgroundArguments) {
-            runTflite();
-            return null;
-        }
-
-        protected void onPostExecute(Void backgroundResult) {
-            tfLiteBusy = false;
-            onRunTfliteDone();
-        }
-
-    }
-
-    private class RunModelOnImage extends TfliteTask {
-        int NUM_RESULTS;
-        float THRESHOLD;
-        ByteBuffer input;
-
-        RunModelOnImage() throws IOException {
-            float IMAGE_MEAN = 127.5f;
-            float IMAGE_STD = 127.5f;
-            String path = "skata.jpg";
-             NUM_RESULTS = 6;
-             THRESHOLD = 0.05f;
-
-            input = feedInputTensorImage(path, IMAGE_MEAN, IMAGE_STD);
-        }
-
-        protected void runTflite() {
-            tflite.run(input, labelProb);
-        }
-
-        protected void onRunTfliteDone() {
-            results = GetTopN(NUM_RESULTS, THRESHOLD);
+            floatMap = labels.getMapWithFloatValue();
         }
     }
 
-
-
-    private List<Map<String, Object>> GetTopN(int numResults, float threshold) {
-        PriorityQueue<Map<String, Object>> pq =
-                new PriorityQueue<>(
-                        1,
-                        new Comparator<Map<String, Object>>() {
-                            @Override
-                            public int compare(Map<String, Object> lhs, Map<String, Object> rhs) {
-                                return Float.compare((float) rhs.get("confidence"), (float) lhs.get("confidence"));
-                            }
-                        });
-
-        for (int i = 0; i < labels.size(); ++i) {
-            float confidence = labelProb[0][i];
-            if (confidence > threshold) {
-                Map<String, Object> res = new HashMap<>();
-                res.put("index", i);
-                res.put("label", labels.size() > i ? labels.get(i) : "unknown");
-                res.put("confidence", confidence);
-                pq.add(res);
-            }
+    private void setupInterpreter() {
+        tfliteOptions.setNumThreads(2);
+        try {
+            tflite = new Interpreter(loadModelFile(), tfliteOptions);
+        } catch (IOException e) {
+            Log.e("tfliteError","error loding model", e);
         }
-
-        final ArrayList<Map<String, Object>> recognitions = new ArrayList<>();
-        int recognitionsSize = Math.min(pq.size(), numResults);
-        for (int i = 0; i < recognitionsSize; ++i) {
-            recognitions.add(pq.poll());
-        }
-
-        return recognitions;
     }
 
-    private String loadModel() throws IOException {
-        String model = MODEL_PATH;
-        assetManager = this.getAssets();
-        AssetFileDescriptor fileDescriptor = assetManager.openFd(model);
+    private MappedByteBuffer loadModelFile( ) throws IOException {
+
+        AssetFileDescriptor fileDescriptor = this.getAssets().openFd(MODEL_PATH);
         FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
         FileChannel fileChannel = inputStream.getChannel();
         long startOffset = fileDescriptor.getStartOffset();
         long declaredLength = fileDescriptor.getDeclaredLength();
-        MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
-
-        int numThreads = 1;
-        final Interpreter.Options tfliteOptions = new Interpreter.Options();
-        tfliteOptions.setNumThreads(numThreads);
-        tflite = new Interpreter(buffer, tfliteOptions);
-
-        String labels = LABEL_PATH;
-
-        if (labels.length() > 0) {
-            loadLabels(assetManager, labels);
-        }
-
-        return "success";
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
     }
 
-    private void loadLabels(AssetManager assetManager, String path) {
-        BufferedReader br;
-        try {
-            br = new BufferedReader(new InputStreamReader(assetManager.open(path)));
-            String line;
-            labels = new Vector<>();
-            while ((line = br.readLine()) != null) {
-                labels.add(line);
-            }
-            labelProb = new float[1][labels.size()];
-            br.close();
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to read label file", e);
+    private TensorOperator getProcessNormalizeOp() {
+        return new NormalizeOp(127.5f, 127.5f);
+    }
+
+    private TensorOperator getPostprocessNormalizeOp() {
+        return new NormalizeOp(0.0f, 1.0f);
+    }
+
+    private void runInferenceOnImage(int epochs) {
+
+        Trace.beginSection("runInference");
+        long startTimeForReference = SystemClock.uptimeMillis();
+        for (int i = 0; i < epochs; i++){
+            tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
         }
+        long endTimeForReference = SystemClock.uptimeMillis();
+        Trace.endSection();
+        System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
+
+
+    }
+    /** An immutable result returned by a Classifier describing what was recognized. */
+    public static class Recognition {
+        /**
+         * A unique identifier for what has been recognized. Specific to the class, not the instance of
+         * the object.
+         */
+        private final String id;
+
+        /** Display name for the recognition. */
+        private final String title;
+
+        /**
+         * A sortable score for how good the recognition is relative to others. Higher should be better.
+         */
+        private final Float confidence;
+
+        /** Optional location within the source image for the location of the recognized object. */
+        private RectF location;
+
+        public Recognition(
+                final String id, final String title, final Float confidence, final RectF location) {
+            this.id = id;
+            this.title = title;
+            this.confidence = confidence;
+            this.location = location;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public Float getConfidence() {
+            return confidence;
+        }
+
+        public RectF getLocation() {
+            return new RectF(location);
+        }
+
+        public void setLocation(RectF location) {
+            this.location = location;
+        }
+
+        @Override
+        public String toString() {
+            String resultString = "";
+            if (id != null) {
+                resultString += "[" + id + "] ";
+            }
+
+            if (title != null) {
+                resultString += title + " ";
+            }
+
+            if (confidence != null) {
+                resultString += String.format("(%.1f%%) ", confidence * 100.0f);
+            }
+
+            if (location != null) {
+                resultString += location + " ";
+            }
+
+            return resultString.trim();
+        }
+    }
+    /** Gets the top-k results. */
+    private static List<Recognition> getTopKProbability(Map<String, Float> labelProb) {
+        // Find the best classifications.
+        PriorityQueue<Recognition> pq =
+                new PriorityQueue<>(
+                        3,
+                        new Comparator<Recognition>() {
+                            @Override
+                            public int compare(Recognition lhs, Recognition rhs) {
+                                // Intentionally reversed to put high confidence at the head of the queue.
+                                return Float.compare(rhs.getConfidence(), lhs.getConfidence());
+                            }
+                        });
+
+        for (Map.Entry<String, Float> entry : labelProb.entrySet()) {
+            pq.add(new Recognition("" + entry.getKey(), entry.getKey(), entry.getValue(), null));
+        }
+
+        final ArrayList<Recognition> recognitions = new ArrayList<>();
+        int recognitionsSize = Math.min(pq.size(), 3);
+        for (int i = 0; i < recognitionsSize; ++i) {
+            recognitions.add(pq.poll());
+        }
+        return recognitions;
+    }
+
+    /** Runs inference and returns the classification results. */
+    public List<Recognition> recognizeImage() {
+        // Logs this method so that it can be analyzed with systrace.
+        Trace.beginSection("recognizeImage");
+
+        // Runs the inference call.
+        Trace.beginSection("runInference");
+        long startTimeForReference = SystemClock.uptimeMillis();
+        tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
+        long endTimeForReference = SystemClock.uptimeMillis();
+        Trace.endSection();
+        System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
+
+        probabilityProcessor = new TensorProcessor.Builder().add(getPostprocessNormalizeOp()).build();
+        // Gets the map of label and probability.
+        Map<String, Float> labeledProbability =
+                new TensorLabel(labels, probabilityProcessor.process(outputProbabilityBuffer))
+                        .getMapWithFloatValue();
+        Trace.endSection();
+
+        // Gets top-k results.
+        return getTopKProbability(labeledProbability);
+    }
+    private void closeTflite() {
+        tflite.close();
+        tflite = null;
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.menu_main, menu);
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
 
+        //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
             return true;
         }

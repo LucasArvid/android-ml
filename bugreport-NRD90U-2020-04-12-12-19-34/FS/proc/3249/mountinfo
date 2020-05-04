@@ -1,0 +1,28 @@
+844 844 0:2 / / ro master:1 - rootfs rootfs ro,seclabel,size=1851784k,nr_inodes=462946
+845 844 0:13 / /dev rw,nosuid,relatime master:2 - tmpfs tmpfs rw,seclabel,mode=755
+846 845 0:11 / /dev/pts rw,relatime master:3 - devpts devpts rw,seclabel,mode=600
+847 845 0:18 / /dev/cpuctl rw,relatime master:4 - cgroup none rw,cpu
+848 845 0:21 / /dev/usb-ffs/adb rw,relatime master:22 - functionfs adb rw
+849 844 0:4 / /proc rw,relatime master:5 - proc proc rw,gid=3009,hidepid=2
+850 844 0:14 / /sys rw,relatime master:6 - sysfs sysfs rw,seclabel
+851 850 0:12 / /sys/fs/selinux rw,relatime master:7 - selinuxfs selinuxfs rw
+852 850 0:5 / /sys/kernel/debug rw,relatime master:8 - debugfs debugfs rw,seclabel
+853 850 0:19 / /sys/fs/pstore rw,relatime master:9 - pstore pstore rw,seclabel
+854 844 0:15 / /acct rw,relatime master:10 - cgroup none rw,cpuacct
+855 844 0:16 / /mnt rw,relatime master:11 - tmpfs tmpfs rw,seclabel,mode=755,gid=1000
+856 855 0:20 / /mnt/runtime/default/emulated rw,nosuid,noexec,noatime shared:24 master:23 - sdcardfs /data/media rw,uid=1023,gid=1023,sdfs_gid=1015,sdfs_mask6,multi_user
+857 855 0:22 / /mnt/runtime/read/emulated rw,nosuid,noexec,noatime shared:26 master:25 - sdcardfs /data/media rw,uid=1023,gid=1023,sdfs_gid=9997,sdfs_mask23,multi_user
+858 855 0:23 / /mnt/runtime/write/emulated rw,nosuid,noexec,noatime shared:28 master:27 - sdcardfs /data/media rw,uid=1023,gid=1023,sdfs_gid=9997,sdfs_mask7,multi_user
+859 844 0:17 / /config rw,relatime master:12 - configfs none rw
+860 844 253:0 / /system ro,noatime master:13 - ext4 /dev/block/dm-0 ro,seclabel,data=ordered
+861 844 8:15 / /cache rw,nosuid,nodev,noatime master:14 - ext4 /dev/block/bootdevice/by-name/cache rw,seclabel,discard,noauto_da_alloc,errors=continue,data=ordered
+862 844 8:13 / /persist rw,nosuid,nodev,noatime master:16 - ext4 /dev/block/bootdevice/by-name/persist rw,seclabel,noauto_da_alloc,errors=continue,data=ordered
+863 844 259:5 / /firmware ro,relatime master:17 - vfat /dev/block/bootdevice/by-name/modem ro,context=u:object_r:firmware_file:s0,uid=1000,gid=1000,fmask=0337,dmask=0227,codepage=437,iocharset=iso8859-1,shortname=lower,errors=remount-ro
+864 844 8:5 / /sns rw,nosuid,nodev,noatime master:18 - ext4 /dev/block/bootdevice/by-name/sns rw,seclabel,noauto_da_alloc,errors=continue,data=ordered
+865 844 8:4 / /persist-lg rw,nosuid,nodev,noatime master:19 - ext4 /dev/block/bootdevice/by-name/drm rw,seclabel,noauto_da_alloc,errors=continue,data=ordered
+866 844 8:3 / /mpt rw,nosuid,nodev,noatime master:20 - ext4 /dev/block/bootdevice/by-name/mpt rw,seclabel,noauto_da_alloc,errors=continue,data=ordered
+867 844 259:0 / /OP ro,nosuid,nodev,relatime master:21 - ext4 /dev/block/bootdevice/by-name/OP ro,seclabel,noauto_da_alloc,data=ordered
+868 844 253:1 / /data rw,nosuid,nodev,noatime master:15 - ext4 /dev/block/dm-1 rw,seclabel,discard,noauto_da_alloc,resuid=1000,errors=continue,data=ordered
+869 844 0:16 /runtime/write /storage rw,relatime master:11 - tmpfs tmpfs rw,seclabel,mode=755,gid=1000
+870 869 0:23 / /storage/emulated rw,nosuid,noexec,noatime shared:28 master:27 - sdcardfs /data/media rw,uid=1023,gid=1023,sdfs_gid=9997,sdfs_mask7,multi_user
+871 869 0:16 /user/0 /storage/self rw,relatime master:11 - tmpfs tmpfs rw,seclabel,mode=755,gid=1000

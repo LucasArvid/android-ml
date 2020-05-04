@@ -89,14 +89,13 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-
         try {
-            if (loadModel() == "success")
+            if (loadModel() == "success") {
                 startTime = SystemClock.uptimeMillis();
-            for (int i = 0; i < EPOCHS; i++)
+                for (int i = 0; i < EPOCHS; i++)
                     new RunModelOnImage().executeTfliteTask();
-            Log.v("time", "Total Inference took " + (SystemClock.uptimeMillis() - startTime));
-
+                Log.v("time", "Inference took " + (SystemClock.uptimeMillis() - startTime));
+            }
         } catch(Exception e) {
             e.printStackTrace();
         }
@@ -220,7 +219,6 @@ public class MainActivity extends AppCompatActivity {
         int NUM_RESULTS;
         float THRESHOLD;
         ByteBuffer input;
-        long startTime;
 
         RunModelOnImage() throws IOException {
             float IMAGE_MEAN = 127.5f;
@@ -229,7 +227,6 @@ public class MainActivity extends AppCompatActivity {
              NUM_RESULTS = 6;
              THRESHOLD = 0.05f;
 
-            startTime = SystemClock.uptimeMillis();
             input = feedInputTensorImage(path, IMAGE_MEAN, IMAGE_STD);
         }
 
@@ -238,7 +235,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         protected void onRunTfliteDone() {
-            Log.v("time", "Inference took " + (SystemClock.uptimeMillis() - startTime));
             results = GetTopN(NUM_RESULTS, THRESHOLD);
         }
     }

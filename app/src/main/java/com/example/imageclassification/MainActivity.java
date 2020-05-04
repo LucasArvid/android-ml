@@ -29,6 +29,7 @@ import org.tensorflow.lite.support.image.ops.Rot90Op;
 import org.tensorflow.lite.support.label.TensorLabel;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
+
 import android.os.SystemClock;
 import android.os.Trace;
 import android.util.Log;
@@ -93,13 +94,16 @@ public class MainActivity extends AppCompatActivity {
         long startTimeForReference = SystemClock.uptimeMillis();
         for (int i = 1; i <= EPOCHS; i++) {
             loadBitmap(String.format("dataset/image_00%d.jpg", i));
-            //recognitions = recognizeImage();
-            runInferenceOnImage();
+            recognitions = recognizeImage();
+            //runInferenceOnImage();
         }
         long endTimeForReference = SystemClock.uptimeMillis();
         Trace.endSection();
         System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
+        System.out.println(recognitions.get(0).getTitle());
+        System.out.println(recognitions.get(0).getConfidence());
 
+        closeTflite();
         setupLabels();
         this.finish();
         System.exit(0);
@@ -175,79 +179,12 @@ public class MainActivity extends AppCompatActivity {
     private TensorOperator getPostprocessNormalizeOp() {
         return new NormalizeOp(0.0f, 1.0f);
     }
-
+    /** Function not using labels, clean up before release*/
+    /*
     private void runInferenceOnImage() {
         tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
     }
-    /** An immutable result returned by a Classifier describing what was recognized. */
-    public static class Recognition {
-        /**
-         * A unique identifier for what has been recognized. Specific to the class, not the instance of
-         * the object.
-         */
-        private final String id;
-
-        /** Display name for the recognition. */
-        private final String title;
-
-        /**
-         * A sortable score for how good the recognition is relative to others. Higher should be better.
-         */
-        private final Float confidence;
-
-        /** Optional location within the source image for the location of the recognized object. */
-        private RectF location;
-
-        public Recognition(
-                final String id, final String title, final Float confidence, final RectF location) {
-            this.id = id;
-            this.title = title;
-            this.confidence = confidence;
-            this.location = location;
-        }
-
-        public String getId() {
-            return id;
-        }
-
-        public String getTitle() {
-            return title;
-        }
-
-        public Float getConfidence() {
-            return confidence;
-        }
-
-        public RectF getLocation() {
-            return new RectF(location);
-        }
-
-        public void setLocation(RectF location) {
-            this.location = location;
-        }
-
-        @Override
-        public String toString() {
-            String resultString = "";
-            if (id != null) {
-                resultString += "[" + id + "] ";
-            }
-
-            if (title != null) {
-                resultString += title + " ";
-            }
-
-            if (confidence != null) {
-                resultString += String.format("(%.1f%%) ", confidence * 100.0f);
-            }
-
-            if (location != null) {
-                resultString += location + " ";
-            }
-
-            return resultString.trim();
-        }
-    }
+    */
     /** Gets the top-k results. */
     private static List<Recognition> getTopKProbability(Map<String, Float> labelProb) {
         // Find the best classifications.
@@ -278,7 +215,7 @@ public class MainActivity extends AppCompatActivity {
     public List<Recognition> recognizeImage() {
         // Logs this method so that it can be analyzed with systrace.
         Trace.beginSection("recognizeImage");
-
+        /** Clean up logs before release*/
         // Runs the inference call.
         Trace.beginSection("runInference");
         long startTimeForReference = SystemClock.uptimeMillis();

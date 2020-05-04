@@ -87,13 +87,18 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         setupInterpreter();
-        loadBitmap();
         loadLabels();
 
-        //recognitions = recognizeImage();
-
-        runInferenceOnImage(EPOCHS);
-
+        Trace.beginSection("runInference");
+        long startTimeForReference = SystemClock.uptimeMillis();
+        for (int i = 1; i <= EPOCHS; i++) {
+            loadBitmap(String.format("dataset/image_00%d.jpg", i));
+            //recognitions = recognizeImage();
+            runInferenceOnImage();
+        }
+        long endTimeForReference = SystemClock.uptimeMillis();
+        Trace.endSection();
+        System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
 
         setupLabels();
         this.finish();
@@ -101,14 +106,14 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void loadBitmap(){
+    private void loadBitmap(String filepath){
         try {
-            bitmap = BitmapFactory.decodeStream(this.getAssets().open("skata.jpg"));
+            bitmap = BitmapFactory.decodeStream(this.getAssets().open(filepath));
         } catch (IOException e) {
             e.printStackTrace();
             Log.e("bitmapError",  "failed big time boi", e);
         }
-
+        System.out.println(filepath);
         inputImageBuffer = new TensorImage(tflite.getInputTensor(0).dataType()); // or Data.Type.FLOAT32
         inputImageBuffer.load(bitmap);
 
@@ -171,18 +176,8 @@ public class MainActivity extends AppCompatActivity {
         return new NormalizeOp(0.0f, 1.0f);
     }
 
-    private void runInferenceOnImage(int epochs) {
-
-        Trace.beginSection("runInference");
-        long startTimeForReference = SystemClock.uptimeMillis();
-        for (int i = 0; i < epochs; i++){
-            tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
-        }
-        long endTimeForReference = SystemClock.uptimeMillis();
-        Trace.endSection();
-        System.out.println("Timecost to run model inference: " + (endTimeForReference - startTimeForReference));
-
-
+    private void runInferenceOnImage() {
+        tflite.run(inputImageBuffer.getBuffer(), outputProbabilityBuffer.getBuffer().rewind());
     }
     /** An immutable result returned by a Classifier describing what was recognized. */
     public static class Recognition {
